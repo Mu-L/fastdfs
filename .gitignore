@@ -55,6 +55,8 @@ client/test/fdfs_test
 client/test/fdfs_test1
 storage/fdfs_storaged
 tracker/fdfs_trackerd
+monitoring/health_check/health_checker
+monitoring/prometheus_exporter/fdfs_exporter
 test/combine_result
 test/100M
 test/10M

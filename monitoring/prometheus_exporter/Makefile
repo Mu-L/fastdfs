@@ -1,6 +1,6 @@
 
 COMPILE = $(CC) -g -Wall -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64
-INC_PATH = -I/usr/local/include -I../client -I../common -I../tracker
+INC_PATH = -I/usr/local/include/fastdfs -I/usr/include/fastdfs
 LIB_PATH = -L/usr/local/lib -lfdfsclient -lfastcommon -lserverframe
 TARGET_PATH = $(TARGET_PREFIX)/bin
 

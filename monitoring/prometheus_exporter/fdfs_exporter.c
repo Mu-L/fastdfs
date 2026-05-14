@@ -111,15 +111,21 @@ static int export_group_metrics(char *response, size_t *offset, size_t max_size,
     
     // Storage server count
     format_metric_name(metric_name, sizeof(metric_name), "group", "storage_count");
-    snprintf(value, sizeof(value), "%d", pGroupStat->count);
+    snprintf(value, sizeof(value), "%d", pGroupStat->storage_count);
     if (append_metric(response, offset, max_size, metric_name, labels, value,
                      "Number of storage servers in group") != 0) return -1;
     
-    // Active server count
-    format_metric_name(metric_name, sizeof(metric_name), "group", "active_count");
-    snprintf(value, sizeof(value), "%d", pGroupStat->active_count);
+    // Readable server count
+    format_metric_name(metric_name, sizeof(metric_name), "group", "readable_server_count");
+    snprintf(value, sizeof(value), "%d", pGroupStat->readable_server_count);
     if (append_metric(response, offset, max_size, metric_name, labels, value,
-                     "Number of active storage servers") != 0) return -1;
+                     "Number of readable storage servers") != 0) return -1;
+
+    // Writable server count
+    format_metric_name(metric_name, sizeof(metric_name), "group", "writable_server_count");
+    snprintf(value, sizeof(value), "%d", pGroupStat->writable_server_count);
+    if (append_metric(response, offset, max_size, metric_name, labels, value,
+                     "Number of writable storage servers") != 0) return -1;
     
     return 0;
 }
@@ -129,7 +135,7 @@ static int export_group_metrics(char *response, size_t *offset, size_t max_size,
  */
 static int export_storage_metrics(char *response, size_t *offset, size_t max_size,
                                  const char *group_name,
-                                 FDFSStorageBrief *pStorage,
+                                 FDFSStorageInfo *pStorage,
                                  FDFSStorageStat *pStorageStat) {
     char metric_name[256];
     char labels[512];
@@ -270,9 +276,13 @@ static int export_storage_metrics(char *response, size_t *offset, size_t max_siz
 static int collect_metrics(char *response, size_t max_size) {
     int result;
     int group_count;
+    int storage_count;
     FDFSGroupStat group_stats[FDFS_MAX_GROUPS];
     FDFSGroupStat *pGroupStat;
     FDFSGroupStat *pGroupEnd;
+    FDFSStorageInfo storage_infos[FDFS_MAX_SERVERS_EACH_GROUP];
+    FDFSStorageInfo *pStorage;
+    FDFSStorageInfo *pStorageEnd;
     size_t offset = 0;
     
     // Get tracker connection
@@ -285,7 +295,7 @@ static int collect_metrics(char *response, size_t max_size) {
     result = tracker_list_groups(pTrackerServer, group_stats,
                                  FDFS_MAX_GROUPS, &group_count);
     if (result != 0) {
-        tracker_disconnect_server_ex(pTrackerServer, true);
+        conn_pool_disconnect_server(pTrackerServer);
         return result;
     }
     
@@ -294,31 +304,31 @@ static int collect_metrics(char *response, size_t max_size) {
     for (pGroupStat = group_stats; pGroupStat < pGroupEnd; pGroupStat++) {
         // Export group metrics
         if (export_group_metrics(response, &offset, max_size, pGroupStat) != 0) {
-            tracker_disconnect_server_ex(pTrackerServer, true);
+            conn_pool_disconnect_server(pTrackerServer);
             return -1;
         }
-        
+
+        if ((result=tracker_list_servers(pTrackerServer, pGroupStat->group_name,
+                        NULL, storage_infos, FDFS_MAX_SERVERS_EACH_GROUP,
+                        &storage_count)) != 0)
+        {
+            conn_pool_disconnect_server(pTrackerServer);
+            return result;
+        }
+
         // Export storage metrics for each server in group
-        FDFSStorageBrief *pStorage;
-        FDFSStorageBrief *pStorageEnd;
-        FDFSStorageStat *pStorageStat;
-        
-        pStorageEnd = pGroupStat->storage_servers + pGroupStat->count;
-        pStorageStat = pGroupStat->storage_stats;
-        
-        for (pStorage = pGroupStat->storage_servers; 
-             pStorage < pStorageEnd; 
-             pStorage++, pStorageStat++) {
+        pStorageEnd = storage_infos + storage_count;
+        for (pStorage = storage_infos; pStorage < pStorageEnd; pStorage++) {
             if (export_storage_metrics(response, &offset, max_size,
-                                      pGroupStat->group_name,
-                                      pStorage, pStorageStat) != 0) {
-                tracker_disconnect_server_ex(pTrackerServer, true);
+                        pGroupStat->group_name, pStorage,
+                        &pStorage->stat) != 0) {
+                conn_pool_disconnect_server(pTrackerServer);
                 return -1;
             }
         }
     }
     
-    tracker_disconnect_server_ex(pTrackerServer, true);
+    conn_pool_disconnect_server(pTrackerServer);
     return 0;
 }
 
